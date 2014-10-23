@@ -23,6 +23,7 @@ typedef enum{
 
 int listen_port = 8099 ; 
 int is_decode = 0 ;
+int ip_version = 0 ; 
 
 void Log( char *buf ){
 	time_t now_time ; 
@@ -58,20 +59,37 @@ void Encode(char *ch ,int sz){
 int create_socket( int con_current_connect ){
 	int s_socket ; 
 	struct sockaddr_in s_add ;
+	struct sockaddr_in6 s6_add;
 
-	s_socket = socket( AF_INET, SOCK_STREAM , 0 );
-	if( s_socket == -1 ){
-		printf("socket initial failed!\n");
-		return -1 ; 
+	if( ip_version == 1 ){
+		s_socket = socket( AF_INET6 , SOCK_STREAM , 0 ) ;
+		if( s_socket < 0 ){
+			printf("socket initial failed!\n");	return -1 ; 
+		}
+		bzero( &s6_add , sizeof(s6_add) ) ;
+		s6_add.sin6_family = AF_INET6 ; 
+		s6_add.sin6_port = htons( listen_port ) ;
+		s6_add.sin6_addr = in6addr_any ;
+		if( bind( s_socket , (struct sockaddr *)&s6_add , sizeof(s6_add) ) < 0 ){
+			printf("socket bind failed!\n");
+			return -1 ; 
+		}
 	}
-	bzero( &s_add , sizeof(struct sockaddr_in) ) ;
-	s_add.sin_family = AF_INET ; 
-	s_add.sin_addr.s_addr = htonl( INADDR_ANY ) ;
-	s_add.sin_port = htons( listen_port ) ;
+	else{
+		s_socket = socket( AF_INET, SOCK_STREAM , 0 );
+		if( s_socket < 0  ){
+			printf("socket initial failed!\n");
+			return -1 ; 
+		}
+		bzero( &s_add , sizeof(struct sockaddr_in) ) ;
+		s_add.sin_family = AF_INET ; 
+		s_add.sin_addr.s_addr = htonl( INADDR_ANY ) ;
+		s_add.sin_port = htons( listen_port ) ;
 
-	if( bind(s_socket , (struct sockaddr *)(&s_add) , sizeof(struct sockaddr) ) == -1 ){
-		printf("socket bind failed!\n"); 
-		return -1 ; 
+		if( bind(s_socket , (struct sockaddr *)(&s_add) , sizeof(struct sockaddr) ) == -1 ){
+			printf("socket bind failed!\n"); 
+			return -1 ; 
+		}
 	}
 	if( listen( s_socket,con_current_connect )==-1 ){
 		printf("socket listen failed!\n") ;
@@ -375,6 +393,7 @@ int usage(){
 	printf("**************************************\n");
 	printf("Listening port:	-p\n");
 	printf("Decode/Encode:	-D\n");
+	printf("ip-v6 or ip-v4, default is v4:	-v6\n");
 	printf("**************************************\n");
 }
 
@@ -392,6 +411,15 @@ int parse(int argc,char **argv){
 			else if( argv[i][1] == 'D' ){
 				is_decode = 1 ;		
 			}
+			else if( argv[i][1] == 'v' ){
+				if( argv[i][2] == '4' ){
+					ip_version = 0 ; 
+				}
+				else if( argv[i][2] == '6' )
+					ip_version = 1 ;
+				else
+					return 1 ;
+			}
 			else
 				return 1 ; 
 		} 
@@ -406,16 +434,16 @@ int main(int argc, char **argv ){
 	socklen_t client_size ; 
 	int pid ;
 	struct sockaddr_in c_add ;
-	
+	struct sockaddr_in6 c6_add ;
+
 	usage() ; 
-	while( 1 ){
-		if( parse( argc , argv ) ) 
-			usage();
-		else
-			break ; 
+	if( parse( argc , argv ) ){ 
+		usage();
+		return 1 ;
 	}
 	printf("listening port is: %d\n" , listen_port );
 	printf("decode/encode is: %s\n" , is_decode==1?"on":"off" );
+	printf("ip_version is: %s\n" , ip_version==0?"ip-v4":"ip-v6" );
 
 	server_socket = create_socket( MAX_CONCURRENT_CONNECTION ) ;
 	if( server_socket == -1 ){
@@ -424,8 +452,14 @@ int main(int argc, char **argv ){
 	signal( SIGCHLD , sigchld_handler ) ; 
 
 	while( 1 ){
-		client_size = sizeof( c_add	 )  ;
-		c_socket = accept( server_socket , (struct sockaddr *)(&c_add) , &client_size ) ; 
+		if( ip_version == 1 ){
+			client_size = sizeof( c6_add ) ;
+			c_socket = accept( server_socket, (struct sockaddr *)(&c6_add) , &client_size  ) ; 
+		}
+		else{
+			client_size = sizeof( c_add	 )  ;
+			c_socket = accept( server_socket , (struct sockaddr *)(&c_add) , &client_size ) ; 
+		}
 		if( c_socket == -1 ){
 			printf("socket accept failed!\n");
 			return -1 ; 

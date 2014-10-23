@@ -11,8 +11,9 @@ const int BUF_SIZE = 1024 * 10 ;
 
 int local_listen_port =  8090 ; 
 int remote_port = 8099 ; 
-char remote_ip[20] = "10.21.2.181" ; 
+char remote_ip[100] = "10.21.2.181" ; 
 int is_decode = 0 ; 
+int ip_version = 0 ; 
 
 typedef enum{
 	GET , POST , CONNECT  
@@ -21,7 +22,8 @@ typedef enum{
 void useage(){
 	printf("./local_listener useage\n");
 	printf("\t-p\t\tlocal listen port\n");
-	printf("\t-H\t\tremote server ip\n");
+	printf("\t-H4\t\tremote server ip-v4\n");
+	printf("\t-H6\t\tremote server ip-v6\n");
 	printf("\t-P\t\tremote server port\n");
 	printf("\t-D\t\tDecode/Encode transfer data\n");
 }
@@ -50,7 +52,16 @@ int parse_arg( int argc ,char **argv ){
 				sscanf( argv[++i] , "%d" , &remote_port ) ; 
 			}
 			else if( argv[i][1] == 'H' ){
-				strcpy( remote_ip , argv[++i] ) ;	
+				if( argv[i][2] == '4' )
+					strcpy( remote_ip , argv[++i] ) ;	
+				else if( argv[i][2] == '6' ){
+					strcpy( remote_ip , argv[++i] ) ;
+					ip_version = 1 ;
+				}
+				else{
+					useage() ;
+					return 1 ; 
+				} 
 			}
 			else if( argv[i][1] == 'D' ){
 				is_decode = 1 ; 
@@ -105,18 +116,41 @@ void hint(){
 int create_server_socket(){
 	int s_socket ; 
 	struct sockaddr_in s_add ; 
-	if( (s_socket = socket(AF_INET ,SOCK_STREAM , 0) ) < 0 ){
-		printf("create server socket socket error!\n");
-		return -1; 
-	}
-	memset( &s_add , 0 , sizeof(s_add) ) ; 
-	s_add.sin_family = AF_INET ; 
-	s_add.sin_addr.s_addr = inet_addr( remote_ip ) ;
-	s_add.sin_port = htons( remote_port ) ; 
+	struct sockaddr_in6 s6_add ; 
 
-	if( connect( s_socket , (struct sockaddr *)(&s_add) ,sizeof(s_add) ) < 0 ){
-		printf("create server socket connection error!\n");
-		return -1; 
+	if( ip_version == 1 ){
+		// ip_v6 
+		if( (s_socket = socket( AF_INET6, SOCK_STREAM , 0 ) ) < 0 ){
+			printf("create server socket error!\n");
+			return -1 ; 
+		}
+		memset( &s6_add , 0 , sizeof(s6_add) ) ;
+		s6_add.sin6_family = AF_INET6  ;
+		if( inet_pton( AF_INET6 , remote_ip , &s6_add.sin6_addr ) < 0 ){
+			printf("convert host ip %s to network ip error!\n" , remote_ip );
+			return -1 ; 
+		}
+		s6_add.sin6_port = htons( remote_port ) ; 
+		if( connect( s_socket , (struct sockaddr*)&s6_add , sizeof(s6_add) ) < 0 ){
+			printf("create server socket connection error!\n");
+			return -1; 
+		}
+	}
+	else {
+		// ip_v4 
+		if( (s_socket = socket(AF_INET ,SOCK_STREAM , 0) ) < 0 ){
+			printf("create server socket error!\n");
+			return -1; 
+		}
+		memset( &s_add , 0 , sizeof(s_add) ) ; 
+		s_add.sin_family = AF_INET ; 
+		s_add.sin_addr.s_addr = inet_addr( remote_ip ) ;
+		s_add.sin_port = htons( remote_port ) ; 
+
+		if( connect( s_socket , (struct sockaddr *)(&s_add) ,sizeof(s_add) ) < 0 ){
+			printf("create server socket connection error!\n");
+			return -1; 
+		}
 	}
 	return s_socket ;
 }
